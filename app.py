@@ -9,7 +9,6 @@ CORS(app, origins=["https://enrollment.bcp-sms1.com"])
 COURSES_API_URL = "https://registrar.bcp-sms1.com/api/courses.php"
 
 def tokenize(text):
-    # Lowercase, remove non-alphanumeric, split into words
     return re.findall(r'\b[a-z]+\b', text.lower())
 
 @app.route('/recommend', methods=['POST'])
@@ -17,9 +16,10 @@ def recommend():
     data = request.get_json()
     interest_input = data.get('interest', '').strip()
     subject_input = data.get('subject', '').strip()
+    level_filter = data.get('level', '').strip().lower()
 
-    if not interest_input or not subject_input:
-        return jsonify({"error": "Interest and subject are required."}), 400
+    if not interest_input or not subject_input or not level_filter:
+        return jsonify({"error": "Interest, subject, and level are required."}), 400
 
     interest_keywords = tokenize(interest_input)
     subject_keywords = tokenize(subject_input)
@@ -35,7 +35,10 @@ def recommend():
         highest_score = 0
 
         for branch in api_data['branches']:
-            branch_type = branch.get('branch_type', 'Unknown').title()
+            branch_type = branch.get('branch_type', '').lower()
+            if level_filter != branch_type:
+                continue
+
             branch_name = branch.get('branch_name', 'Unknown Branch')
 
             for course in branch.get('courses_strands', []):
@@ -44,8 +47,6 @@ def recommend():
                     continue
 
                 course_tokens = tokenize(course_name)
-
-                # Calculate score based on token overlap
                 interest_score = sum(1 for word in interest_keywords if word in course_tokens)
                 subject_score = sum(1 for word in subject_keywords if word in course_tokens)
                 total_score = interest_score + subject_score
@@ -55,7 +56,7 @@ def recommend():
                     best_match = {
                         "course": course.get('name'),
                         "branch": branch_name,
-                        "branch_type": branch_type,
+                        "branch_type": branch_type.title(),
                         "score": total_score
                     }
 
@@ -70,13 +71,12 @@ def recommend():
             return jsonify({
                 "recommendation": "General Studies",
                 "branch": "Undetermined",
-                "branch_type": "N/A",
+                "branch_type": level_filter.title(),
                 "reason": "No strong match found, but this course provides flexibility for multiple interests."
             })
 
     except Exception as e:
         return jsonify({"error": "Something went wrong while processing.", "details": str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
