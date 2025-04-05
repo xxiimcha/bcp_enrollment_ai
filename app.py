@@ -1,17 +1,28 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
+import re
 
 app = Flask(__name__)
 CORS(app, origins=["https://enrollment.bcp-sms1.com"])
 
 COURSES_API_URL = "https://registrar.bcp-sms1.com/api/courses.php"
 
+def tokenize(text):
+    # Lowercase, remove non-alphanumeric, split into words
+    return re.findall(r'\b[a-z]+\b', text.lower())
+
 @app.route('/recommend', methods=['POST'])
 def recommend():
     data = request.get_json()
-    interest = data.get('interest', '').lower()
-    subject = data.get('subject', '').lower()
+    interest_input = data.get('interest', '').strip()
+    subject_input = data.get('subject', '').strip()
+
+    if not interest_input or not subject_input:
+        return jsonify({"error": "Interest and subject are required."}), 400
+
+    interest_keywords = tokenize(interest_input)
+    subject_keywords = tokenize(subject_input)
 
     try:
         response = requests.get(COURSES_API_URL)
@@ -21,42 +32,45 @@ def recommend():
             return jsonify({"error": "Failed to fetch course data."}), 500
 
         best_match = None
-        match_score = 0
+        highest_score = 0
 
         for branch in api_data['branches']:
-            if branch['branch_type'].lower() != 'college':
-                continue  # Only process college courses
-
+            branch_type = branch.get('branch_type', 'Unknown').title()
             branch_name = branch.get('branch_name', 'Unknown Branch')
-            for course in branch['courses_strands']:
-                course_name = course.get('name', '').lower()
 
+            for course in branch.get('courses_strands', []):
+                course_name = (course.get('name') or '').lower()
                 if not course_name:
                     continue
 
-                score = 0
-                if any(keyword in course_name for keyword in interest.split()):
-                    score += 1
-                if any(keyword in course_name for keyword in subject.split()):
-                    score += 1
+                course_tokens = tokenize(course_name)
 
-                if score > match_score:
-                    match_score = score
+                # Calculate score based on token overlap
+                interest_score = sum(1 for word in interest_keywords if word in course_tokens)
+                subject_score = sum(1 for word in subject_keywords if word in course_tokens)
+                total_score = interest_score + subject_score
+
+                if total_score > highest_score:
+                    highest_score = total_score
                     best_match = {
                         "course": course.get('name'),
-                        "branch": branch_name
+                        "branch": branch_name,
+                        "branch_type": branch_type,
+                        "score": total_score
                     }
 
         if best_match:
             return jsonify({
                 "recommendation": best_match["course"],
                 "branch": best_match["branch"],
-                "reason": f"This course matches your interest in '{interest}' and subject '{subject}'."
+                "branch_type": best_match["branch_type"],
+                "reason": f"This course matches your interest in '{interest_input}' and subject '{subject_input}'."
             })
         else:
             return jsonify({
                 "recommendation": "General Studies",
                 "branch": "Undetermined",
+                "branch_type": "N/A",
                 "reason": "No strong match found, but this course provides flexibility for multiple interests."
             })
 
