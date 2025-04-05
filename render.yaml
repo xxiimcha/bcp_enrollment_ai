@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: course-recommender-api
+    runtime: python
+    buildCommand: ""
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PORT
+        value: 10000
