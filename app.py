@@ -1,6 +1,10 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+# Allow cross-origin requests from your PHP frontend
+CORS(app, origins=["https://enrollment.bcp-sms1.com"])
 
 @app.route('/recommend', methods=['POST'])
 def recommend():
